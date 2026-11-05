@@ -1,0 +1,112 @@
+---
+title: "WW7 genome annotation summary"
+format: html
+---
+
+# Overview
+
+This report summarizes features in the WW7 GFF3 annotation. GFF3 coordinates are 1-based and inclusive; we will account for that when calculating lengths.
+
+```{r}
+library(tidyverse)
+
+gff_columns <- c(
+"seqid", "source", "type", "start", "end",
+"score", "strand", "phase", "attributes"
+)
+
+gff <- readr::read_tsv(
+"data/WW7_a01.gff3",
+comment = "#",
+col_names = gff_columns,
+col_types = readr::cols(
+start = readr::col_integer(),
+end = readr::col_integer(),
+.default = readr::col_character()
+),
+show_col_types = FALSE
+)
+
+glimpse(gff)
+```
+
+
+## Features by type
+
+Before running the count, predict which feature types will be most common and what the table will tell us.
+
+```{r}
+feature_counts <- gff |>
+  count(type, sort = TRUE)
+
+feature_counts
+```
+
+The two most common feature types are `gene` (3363 counts) and `CDS` (3299 counts) respectively. Compared to the rest of the feature types, these two are significantly more abundant in the WW7 annotation, with the third most common type being `tRNA` (49 counts).
+
+
+## CDS length distribution
+
+Before viewing the plot, predict the approximate shape of the CDS length distribution. Do you expect most CDS features to be short, long, or concentrated around a typical length?
+
+```{r}
+cds_lengths <- gff |>
+  filter(type == "CDS") |>
+  mutate(length = end - start + 1)
+
+ggplot(cds_lengths, aes(x = length)) +
+  geom_histogram(binwidth = 100, boundary = 0, color = "white") +
+  labs(
+    title = "WW7 CDS length distribution",
+    x = "CDS length (bp)",
+    y = "Number of CDS features"
+  ) +
+  theme_minimal()
+```
+
+Upon rendering, the plot shows a right skew, telling us that CDS lengths overwhelmingly tend to be <2000 bp. 
+
+
+## Most common products
+
+Before viewing the table, predict what kinds of protein products will appear most often. Do you expect specific named proteins, or broad labels such as “hypothetical protein”?
+
+```{r}
+products <- gff |>
+  mutate(product = stringr::str_match(
+    attributes,
+    "(?:^|;)product=([^;]*)"
+  )[, 2]) |>
+  filter(!is.na(product), product != "") |>
+  count(product, sort = TRUE) |>
+  slice_head(n = 20)
+
+products
+```
+
+The most common product names are "hypothetical protein", "MFS transporter", and "ABC transporter permease". 
+
+
+## Hypothetical proteins among CDS features
+
+Before viewing the result, predict what share of CDS features will be annotated as hypothetical proteins.
+
+```{r}
+cds_products <- gff |>
+  filter(type == "CDS") |>
+  mutate(product = stringr::str_match(
+    attributes,
+    "(?:^|;)product=([^;]*)"
+  )[, 2])
+
+hypothetical_summary <- cds_products |>
+  summarise(
+    total_CDS = n(),
+    hypothetical_CDS = sum(product == "hypothetical protein", na.rm = TRUE),
+    share_percent = 100 * hypothetical_CDS / total_CDS
+  )
+
+hypothetical_summary
+```
+
+5.55% of the CDS features are annotated as hypothetical proteins, which is 183 hypothetical CDS features out of 3,299 total CDS features.
